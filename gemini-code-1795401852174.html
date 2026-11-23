@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bakery POS & Stock Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; }
+    }
+  </style>
+</head>
+<body class="bg-amber-50/60 text-slate-800 min-h-screen">
+  <!-- Toast Notification Banner -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+  <!-- PIN Modal (Unlock / Change PIN / Reset PIN with Current PIN) -->
+  <div id="pin-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/60 p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-amber-200 max-w-sm w-full p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 id="pin-modal-title" class="text-lg font-bold text-slate-900">Owner PIN Required</h2>
+        <button type="button" onclick="closePinModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none">&times;</button>
+      </div>
+      <p id="pin-modal-desc" class="text-sm text-slate-600 mb-4">
+        Enter the 4-digit Owner PIN to unlock Owner Mode.
+      </p>
+
+      <div id="pin-current-wrap" class="hidden mb-3">
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Current 4-Digit PIN</label>
+        <input id="pin-input-current" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+          class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+      </div>
+
+      <div id="pin-new-wrap" class="space-y-3 mb-4">
+        <div id="pin-first-wrap">
+          <label id="pin-label-1" class="block text-xs font-semibold text-slate-600 mb-1">4-Digit PIN</label>
+          <input id="pin-input-1" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+            class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+        <div id="pin-confirm-wrap" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Confirm New 4-Digit PIN</label>
+          <input id="pin-input-2" type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+            class="w-full px-3.5 py-2 text-center tracking-[0.5em] text-lg font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+      </div>
+
+      <p id="pin-error" class="text-xs text-rose-600 font-medium mb-3 hidden"></p>
+
+      <div class="flex gap-2 justify-end">
+        <button type="button" onclick="closePinModal()" class="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700">
+          Cancel
+        </button>
+        <button id="pin-submit-btn" type="button" onclick="submitPinModal()" class="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Header -->
+  <header class="bg-white border-b border-amber-200 sticky top-0 z-30 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🥐</span>
+          <h1 id="app-title" class="text-xl font-extrabold text-slate-900">Bakery POS & Stock</h1>
+          <span id="mode-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
+            Staff Mode
+          </span>
+        </div>
+        <p id="app-subtitle" class="text-xs text-slate-500 mt-0.5">
+          Daily counter billing, real-time stock & archive management
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Language Toggle -->
+        <button type="button" onclick="toggleLanguage()" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300">
+          <span id="lang-btn-label">EN / සිංහල</span>
+        </button>
+
+        <!-- Owner Mode Toggle -->
+        <button id="owner-mode-btn" type="button" onclick="handleOwnerModeClick()" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white">
+          Unlock Owner (PIN)
+        </button>
+
+        <!-- Owner PIN Controls (Visible in Owner Mode) -->
+        <div id="owner-pin-controls" class="hidden flex items-center gap-1.5">
+          <button type="button" onclick="openPinModal('change')" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300">
+            Change PIN
+          </button>
+          <button type="button" onclick="openPinModal('reset')" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300">
+            Reset PIN
+          </button>
+        </div>
+
+        <!-- Start New Day (Resets Stock to 0 & Archives Summary) -->
+        <button type="button" onclick="startNewDay()" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+          🌅 Start New Day (0 pcs)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <!-- Summary KPI Strip -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm">
+        <p class="text-xs font-semibold text-slate-500">Today's Sales (LKR)</p>
+        <p id="kpi-today-sales" class="text-2xl font-extrabold text-emerald-700 mt-1">Rs. 0.00</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm">
+        <p class="text-xs font-semibold text-slate-500">Bills Today</p>
+        <p id="kpi-today-bills" class="text-2xl font-extrabold text-slate-900 mt-1">0</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm">
+        <p class="text-xs font-semibold text-slate-500">Total Stock Left (pcs)</p>
+        <p id="kpi-total-stock" class="text-2xl font-extrabold text-amber-700 mt-1">0</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm">
+        <p class="text-xs font-semibold text-slate-500">Archived Days</p>
+        <p id="kpi-archived-days" class="text-2xl font-extrabold text-indigo-700 mt-1">0</p>
+      </div>
+    </section>
+
+    <!-- Main POS + Cart Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Items & Stock List (2 cols) -->
+      <section class="lg:col-span-2 bg-white rounded-2xl border border-amber-200 shadow-sm p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 id="items-heading" class="text-lg font-bold text-slate-900">Bakery Items & Live Stock</h2>
+            <p class="text-xs text-slate-500">Tap item to add to bill • Use +/- to adjust stock</p>
+          </div>
+          <input id="search-input" type="text" oninput="renderItems()" placeholder="Search item / සොයන්න..."
+            class="px-3.5 py-2 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 w-full sm:w-56" />
+        </div>
+
+        <!-- Add New Item Form (Owner Mode Only) -->
+        <div id="add-item-panel" class="hidden mb-5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <h3 class="text-sm font-bold text-amber-950 mb-3">+ Add New Item (Owner)</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+            <input id="new-item-en" type="text" placeholder="Name (English)"
+              class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white" />
+            <input id="new-item-si" type="text" placeholder="නම (සිංහල)"
+              class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white" />
+            <input id="new-item-price" type="number" min="0" step="any" placeholder="Price (Rs.)"
+              class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white" />
+            <div class="flex gap-2">
+              <input id="new-item-stock" type="number" min="0" step="1" placeholder="Stock (0)"
+                class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white" />
+              <button type="button" onclick="addNewItem()" class="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 hover:bg-amber-700 text-white shrink-0">
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items Container -->
+        <div id="items-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+      </section>
+
+      <!-- Current Bill / Cart (1 col) -->
+      <section class="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h2 id="bill-heading" class="text-lg font-bold text-slate-900">Current Bill</h2>
+            <button type="button" onclick="clearCart()" class="text-xs font-semibold text-rose-600 hover:underline">
+              Clear
+            </button>
+          </div>
+
+          <div id="cart-items" class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+            <p class="text-sm text-slate-400 text-center py-8">No items added yet.</p>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-200 pt-4 mt-4 space-y-3">
+          <div class="flex items-center justify-between text-base font-extrabold text-slate-900">
+            <span>Total</span>
+            <span id="cart-total" class="text-emerald-700 text-xl">Rs. 0.00</span>
+          </div>
+
+          <button type="button" onclick="checkoutBill()" class="w-full py-3 rounded-xl text-sm font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+            ✓ Complete Sale & Deduct Stock
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bill History & Daily Archives -->
+    <section class="bg-white rounded-2xl border border-amber-200 shadow-sm p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Bill History & Daily Archives</h2>
+          <p class="text-xs text-slate-500">Export CSV or manage past bills (PIN required for deleting bills)</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 no-print">
+          <button type="button" onclick="exportBillsCSV()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300">
+            ⬇ Export Bills CSV
+          </button>
+          <button type="button" onclick="deleteSelectedBills()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300">
+            🗑 Delete Selected (PIN)
+          </button>
+        </div>
+      </div>
+
+      <!-- Today's Bills Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 text-xs uppercase text-slate-500 bg-slate-50">
+              <th class="py-2.5 px-3 w-8">
+                <input id="select-all-bills" type="checkbox" onchange="toggleSelectAllBills(this.checked)" />
+              </th>
+              <th class="py-2.5 px-3">Bill #</th>
+              <th class="py-2.5 px-3">Time</th>
+              <th class="py-2.5 px-3">Items</th>
+              <th class="py-2.5 px-3 text-right">Amount</th>
+              <th class="py-2.5 px-3 text-center no-print">Action</th>
+            </tr>
+          </thead>
+          <tbody id="bills-tbody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <!-- Daily Archives List -->
+      <div class="mt-6 pt-5 border-t border-slate-200">
+        <h3 class="text-sm font-bold text-slate-800 mb-3">Archived Days Summary</h3>
+        <div id="archives-list" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Storage Keys ---
+    const KEYS = {
+      ITEMS: 'bakery_pos_items_v1',
+      BILLS: 'bakery_pos_bills_v1',
+      ARCHIVES: 'bakery_pos_archives_v1',
+      PIN: 'bakery_pos_owner_pin_v1',
+      LANG: 'bakery_pos_lang_v1',
+      BILL_SEQ: 'bakery_pos_bill_seq_v1'
+    };
+
+    const DEFAULT_PIN = '1234';
+
+    const DEFAULT_ITEMS = [
+      { id: 'item-1', en: 'Fish Bun', si: 'මාළු බනිස්', price: 90, stock: 0 },
+      { id: 'item-2', en: 'Egg Bun', si: 'බිත්තර බනිස්', price: 100, stock: 0 },
+      { id: 'item-3', en: 'Chicken Roll', si: 'චිකන් රෝල්ස්', price: 140, stock: 0 },
+      { id: 'item-4', en: 'Jam Bun', si: 'ජෑම් බනිස්', price: 70, stock: 0 },
+      { id: 'item-5', en: 'Butter Cake Slice', si: 'බටර් කේක්', price: 120, stock: 0 },
+      { id: 'item-6', en: 'Tea Bun', si: 'ටී බනිස්', price: 60, stock: 0 }
+    ];
+
+    // --- State ---
+    let items = loadJSON(KEYS.ITEMS, DEFAULT_ITEMS);
+    let bills = loadJSON(KEYS.BILLS, []);
+    let archives = loadJSON(KEYS.ARCHIVES, []);
+    let ownerPin = localStorage.getItem(KEYS.PIN) || DEFAULT_PIN;
+    let lang = localStorage.getItem(KEYS.LANG) || 'en';
+    let billSeq = Number(localStorage.getItem(KEYS.BILL_SEQ) || '1');
+    let isOwnerMode = false;
+    let cart = []; // { itemId, qty }
+    let pinActionContext = null; // { type: 'unlock'|'change'|'reset'|'deleteBill'|'deleteSelected', payload?: any }
+
+    function loadJSON(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : structuredClone(fallback);
+      } catch {
+        return structuredClone(fallback);
+      }
+    }
+
+    function saveAll() {
+      localStorage.setItem(KEYS.ITEMS, JSON.stringify(items));
+      localStorage.setItem(KEYS.BILLS, JSON.stringify(bills));
+      localStorage.setItem(KEYS.ARCHIVES, JSON.stringify(archives));
+      localStorage.setItem(KEYS.PIN, ownerPin);
+      localStorage.setItem(KEYS.LANG, lang);
+      localStorage.setItem(KEYS.BILL_SEQ, String(billSeq));
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const colors = {
+        success: 'bg-emerald-700 text-white',
+        error: 'bg-rose-700 text-white',
+        warning: 'bg-amber-600 text-white',
+        info: 'bg-slate-800 text-white'
+      };
+      const el = document.createElement('div');
+      el.className = `${colors[type] || colors.info} px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-semibold pointer-events-auto transition-opacity`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 250);
+      }, 2600);
+    }
+
+    function formatLKR(amount) {
+      return 'Rs. ' + Number(amount || 0).toLocaleString('en-LK', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function getItemName(item) {
+      if (lang === 'si') return `${item.si} (${item.en})`;
+      return `${item.en} (${item.si})`;
+    }
+
+    // --- Language ---
+    function toggleLanguage() {
+      lang = lang === 'en' ? 'si' : 'en';
+      saveAll();
+      renderAll();
+      showToast(lang === 'si' ? 'භාෂාව සිංහලට මාරු කළා' : 'Switched language to English', 'info');
+    }
+
+    // --- PIN & Owner Mode ---
+    function handleOwnerModeClick() {
+      if (isOwnerMode) {
+        isOwnerMode = false;
+        renderAll();
+        showToast('Locked Owner Mode (Staff Mode active)', 'info');
+      } else {
+        openPinModal('unlock');
+      }
+    }
+
+    function openPinModal(type, payload = null) {
+      pinActionContext = { type, payload };
+      const modal = document.getElementById('pin-modal');
+      const title = document.getElementById('pin-modal-title');
+      const desc = document.getElementById('pin-modal-desc');
+      const currentWrap = document.getElementById('pin-current-wrap');
+      const confirmWrap = document.getElementById('pin-confirm-wrap');
+      const label1 = document.getElementById('pin-label-1');
+      const err = document.getElementById('pin-error');
+
+      document.getElementById('pin-input-current').value = '';
+      document.getElementById('pin-input-1').value = '';
+      document.getElementById('pin-input-2').value = '';
+      err.classList.add('hidden');
+      err.textContent = '';
+
+      currentWrap.classList.add('hidden');
+      confirmWrap.classList.add('hidden');
+      label1.textContent = '4-Digit PIN';
+
+      if (type === 'unlock') {
+        title.textContent = 'Owner PIN Required';
+        desc.textContent = 'Enter your 4-digit Owner PIN to unlock Owner Mode.';
+      } else if (type === 'change') {
+        title.textContent = 'Change Owner PIN';
+        desc.textContent = 'Enter your current PIN and choose a new 4-digit PIN.';
+        currentWrap.classList.remove('hidden');
+        confirmWrap.classList.remove('hidden');
+        label1.textContent = 'New 4-Digit PIN';
+      } else if (type === 'reset') {
+        title.textContent = 'Reset Owner PIN';
+        desc.textContent = 'Verify your current PIN to reset the 4-digit Owner PIN.';
+        currentWrap.classList.remove('hidden');
+        confirmWrap.classList.remove('hidden');
+        label1.textContent = 'New 4-Digit PIN';
+      } else if (type === 'deleteBill' || type === 'deleteSelected') {
+        title.textContent = 'Owner PIN to Delete Bills';
+        desc.textContent = 'Enter the 4-digit Owner PIN to permanently delete bill record(s).';
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      setTimeout(() => {
+        if (!currentWrap.classList.contains('hidden')) {
+          document.getElementById('pin-input-current').focus();
+        } else {
+          document.getElementById('pin-input-1').focus();
+        }
+      }, 50);
+    }
+
+    function closePinModal() {
+      const modal = document.getElementById('pin-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      pinActionContext = null;
+    }
+
+    function submitPinModal() {
+      if (!pinActionContext) return;
+      const { type, payload } = pinActionContext;
+      const curVal = document.getElementById('pin-input-current').value.trim();
+      const p1 = document.getElementById('pin-input-1').value.trim();
+      const p2 = document.getElementById('pin-input-2').value.trim();
+      const err = document.getElementById('pin-error');
+
+      const showErr = (msg) => {
+        err.textContent = msg;
+        err.classList.remove('hidden');
+      };
+
+      if (type === 'unlock') {
+        if (p1 !== ownerPin) return showErr('Incorrect 4-digit PIN.');
+        isOwnerMode = true;
+        closePinModal();
+        renderAll();
+        showToast('Owner Mode unlocked', 'success');
+        return;
+      }
+
+      if (type === 'change' || type === 'reset') {
+        if (curVal !== ownerPin) return showErr('Current PIN is incorrect.');
+        if (!/^\d{4}$/.test(p1)) return showErr('New PIN must be exactly 4 digits.');
+        if (p1 !== p2) return showErr('New PIN and confirmation do not match.');
+        ownerPin = p1;
+        saveAll();
+        closePinModal();
+        showToast(type === 'reset' ? 'Owner PIN has been reset' : 'Owner PIN updated', 'success');
+        return;
+      }
+
+      if (type === 'deleteBill') {
+        if (p1 !== ownerPin) return showErr('Incorrect 4-digit PIN.');
+        bills = bills.filter(b => b.id !== payload);
+        saveAll();
+        closePinModal();
+        renderAll();
+        showToast('Bill deleted', 'success');
+        return;
+      }
+
+      if (type === 'deleteSelected') {
+        if (p1 !== ownerPin) return showErr('Incorrect 4-digit PIN.');
+        const idsToDelete = new Set(payload || []);
+        bills = bills.filter(b => !idsToDelete.has(b.id));
+        saveAll();
+        closePinModal();
+        renderAll();
+        showToast(`Deleted ${idsToDelete.size} selected bill(s)`, 'success');
+      }
+    }
+
+    // --- Stock & Items ---
+    function adjustStock(itemId, delta) {
+      const item = items.find(i => i.id === itemId);
+      if (!item) return;
+      const nextStock = Number(item.stock || 0) + Number(delta);
+      if (nextStock < 0) {
+        showToast('Stock cannot go below 0', 'warning');
+        return;
+      }
+      item.stock = nextStock;
+      saveAll();
+      renderAll();
+    }
+
+    function editItemPrice(itemId) {
+      if (!isOwnerMode) {
+        openPinModal('unlock');
+        return;
+      }
+      const item = items.find(i => i.id === itemId);
+      if (!item) return;
+      const raw = prompt(`New price (LKR) for ${item.en}:`, String(item.price));
+      if (raw === null) return;
+      const val = Number(raw);
+      if (!Number.isFinite(val) || val < 0) {
+        showToast('Enter a valid price', 'error');
+        return;
+      }
+      item.price = val;
+      saveAll();
+      renderAll();
+      showToast('Price updated', 'success');
+    }
+
+    function addNewItem() {
+      if (!isOwnerMode) {
+        openPinModal('unlock');
+        return;
+      }
+      const en = document.getElementById('new-item-en').value.trim();
+      const si = document.getElementById('new-item-si').value.trim();
+      const price = Number(document.getElementById('new-item-price').value);
+      const stockRaw = document.getElementById('new-item-stock').value;
+      const stock = stockRaw === '' ? 0 : Math.max(0, Math.floor(Number(stockRaw)));
+
+      if (!en && !si) {
+        showToast('Enter an item name', 'error');
+        return;
+      }
+      if (!Number.isFinite(price) || price < 0) {
+        showToast('Enter a valid price', 'error');
+        return;
+      }
+
+      items.push({
+        id: 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        en: en || si,
+        si: si || en,
+        price,
+        stock: Number.isFinite(stock) ? stock : 0
+      });
+
+      document.getElementById('new-item-en').value = '';
+      document.getElementById('new-item-si').value = '';
+      document.getElementById('new-item-price').value = '';
+      document.getElementById('new-item-stock').value = '';
+
+      saveAll();
+      renderAll();
+      showToast('New item added', 'success');
+    }
+
+    // --- Cart & Billing ---
+    function addToCart(itemId) {
+      const item = items.find(i => i.id === itemId);
+      if (!item) return;
+      const currentStock = Number(item.stock || 0);
+      if (currentStock <= 0) {
+        showToast(`${item.en} is out of stock (0 pcs)`, 'warning');
+        return;
+      }
+      const existing = cart.find(c => c.itemId === itemId);
+      const nextQty = (existing ? existing.qty : 0) + 1;
+      if (nextQty > currentStock) {
+        showToast(`Only ${currentStock} pcs available for ${item.en}`, 'warning');
+        return;
+      }
+      if (existing) {
+        existing.qty = nextQty;
+      } else {
+        cart.push({ itemId, qty: 1 });
+      }
+      renderCart();
+    }
+
+    function updateCartQty(itemId, delta) {
+      const idx = cart.findIndex(c => c.itemId === itemId);
+      if (idx === -1) return;
+      const item = items.find(i => i.id === itemId);
+      const maxStock = item ? Number(item.stock || 0) : 0;
+      const nextQty = cart[idx].qty + delta;
+
+      if (nextQty <= 0) {
+        cart.splice(idx, 1);
+      } else if (nextQty > maxStock) {
+        showToast(`Max stock is ${maxStock} pcs`, 'warning');
+        return;
+      } else {
+        cart[idx].qty = nextQty;
+      }
+      renderCart();
+    }
+
+    function clearCart() {
+      cart = [];
+      renderCart();
+    }
+
+    function checkoutBill() {
+      if (cart.length === 0) {
+        showToast('Bill is empty', 'warning');
+        return;
+      }
+
+      const lineItems = [];
+      let total = 0;
+
+      for (const entry of cart) {
+        const item = items.find(i => i.id === entry.itemId);
+        if (!item) continue;
+        const stock = Number(item.stock || 0);
+        if (entry.qty > stock) {
+          showToast(`Insufficient stock for ${item.en} (${stock} left)`, 'error');
+          return;
+        }
+        const lineTotal = Number(item.price) * entry.qty;
+        total += lineTotal;
+        lineItems.push({
+          itemId: item.id,
+          name: getItemName(item),
+          qty: entry.qty,
+          price: Number(item.price),
+          lineTotal
+        });
+      }
+
+      // Deduct stock
+      for (const entry of cart) {
+        const item = items.find(i => i.id === entry.itemId);
+        if (item) {
+          item.stock = Math.max(0, Number(item.stock || 0) - entry.qty);
+        }
+      }
+
+      const now = new Date();
+      const bill = {
+        id: 'bill-' + Date.now() + '-' + billSeq,
+        billNo: 'B-' + String(billSeq).padStart(4, '0'),
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: now.toISOString().slice(0, 10),
+        items: lineItems,
+        total
+      };
+
+      billSeq += 1;
+      bills.unshift(bill);
+      cart = [];
+
+      saveAll();
+      renderAll();
+      showToast(`Saved ${bill.billNo} (${formatLKR(total)})`, 'success');
+    }
+
+    // --- Start New Day (Archives Today & Resets All Item Stock to 0) ---
+    function startNewDay() {
+      const ok = confirm(
+        'Start New Day?\n\n• Today\'s sales summary will be archived.\n• All item stock counts will reset to 0 pcs so you can enter fresh morning counts.'
+      );
+      if (!ok) return;
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const daySales = bills.reduce((sum, b) => sum + Number(b.total || 0), 0);
+      const dayBillsCount = bills.length;
+
+      if (dayBillsCount > 0 || daySales > 0) {
+        archives.unshift({
+          id: 'arch-' + Date.now(),
+          date: todayStr,
+          closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          billCount: dayBillsCount,
+          totalSales: daySales
+        });
+      }
+
+      // Reset every item's stock to 0 pcs
+      items = items.map(item => ({
+        ...item,
+        stock: 0
+      }));
+
+      // Clear active day bills & current cart for the fresh day
+      bills = [];
+      cart = [];
+
+      saveAll();
+      renderAll();
+      showToast('New day started — all stock reset to 0 pcs', 'success');
+    }
+
+    // --- Bill History & CSV Export ---
+    function toggleSelectAllBills(checked) {
+      document.querySelectorAll('.bill-checkbox').forEach(cb => {
+        cb.checked = checked;
+      });
+    }
+
+    function promptDeleteBill(billId) {
+      openPinModal('deleteBill', billId);
+    }
+
+    function deleteSelectedBills() {
+      const selected = Array.from(document.querySelectorAll('.bill-checkbox:checked')).map(cb => cb.value);
+      if (selected.length === 0) {
+        showToast('Select at least one bill first', 'warning');
+        return;
+      }
+      openPinModal('deleteSelected', selected);
+    }
+
+    function exportBillsCSV() {
+      if (bills.length === 0) {
+        showToast('No bills to export today', 'warning');
+        return;
+      }
+      const rows = [['Bill No', 'Date', 'Time', 'Items', 'Total (LKR)']];
+      for (const b of bills) {
+        const summary = b.items.map(i => `${i.name} x${i.qty}`).join(' | ');
+        rows.push([b.billNo, b.date, b.time, summary, b.total]);
+      }
+      const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bakery-bills-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('CSV exported', 'success');
+    }
+
+    // --- Rendering ---
+    function renderAll() {
+      const modeBadge = document.getElementById('mode-badge');
+      const ownerBtn = document.getElementById('owner-mode-btn');
+      const pinControls = document.getElementById('owner-pin-controls');
+      const addItemPanel = document.getElementById('add-item-panel');
+
+      if (isOwnerMode) {
+        modeBadge.textContent = 'Owner Mode';
+        modeBadge.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-white';
+        ownerBtn.textContent = 'Lock Owner';
+        ownerBtn.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white';
+        pinControls.classList.remove('hidden');
+        addItemPanel.classList.remove('hidden');
+      } else {
+        modeBadge.textContent = 'Staff Mode';
+        modeBadge.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700';
+        ownerBtn.textContent = 'Unlock Owner (PIN)';
+        ownerBtn.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white';
+        pinControls.classList.add('hidden');
+        addItemPanel.classList.add('hidden');
+      }
+
+      renderKPIs();
+      renderItems();
+      renderCart();
+      renderBills();
+      renderArchives();
+    }
+
+    function renderKPIs() {
+      const todaySales = bills.reduce((s, b) => s + Number(b.total || 0), 0);
+      const totalStock = items.reduce((s, i) => s + Number(i.stock || 0), 0);
+      document.getElementById('kpi-today-sales').textContent = formatLKR(todaySales);
+      document.getElementById('kpi-today-bills').textContent = String(bills.length);
+      document.getElementById('kpi-total-stock').textContent = `${totalStock} pcs`;
+      document.getElementById('kpi-archived-days').textContent = String(archives.length);
+    }
+
+    function renderItems() {
+      const query = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+      const grid = document.getElementById('items-grid');
+      const filtered = items.filter(item =>
+        !query ||
+        item.en.toLowerCase().includes(query) ||
+        item.si.toLowerCase().includes(query)
+      );
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<p class="text-sm text-slate-400 col-span-full text-center py-6">No matching items.</p>`;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(item => {
+        const stock = Number(item.stock || 0);
+        const outOfStock = stock <= 0;
+        return `
+          <div class="rounded-xl border ${outOfStock ? 'border-slate-200 bg-slate-50/70' : 'border-amber-200 bg-amber-50/40'} p-3.5 flex flex-col justify-between gap-3">
+            <div onclick="addToCart('${item.id}')" class="cursor-pointer select-none">
+              <div class="flex items-start justify-between gap-2">
+                <span class="font-bold text-slate-900 text-sm">${getItemName(item)}</span>
+                <button type="button" onclick="event.stopPropagation(); editItemPrice('${item.id}')" title="Edit Price"
+                  class="text-xs font-extrabold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  ${formatLKR(item.price)}
+                </button>
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs font-bold px-2 py-0.5 rounded-md ${outOfStock ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-900'}">
+                  Stock: ${stock} pcs
+                </span>
+                ${outOfStock ? '<span class="text-[11px] font-semibold text-rose-600">Out of stock</span>' : ''}
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-slate-200/80">
+              <button type="button" onclick="addToCart('${item.id}')" ${outOfStock ? 'disabled' : ''}
+                class="px-3 py-1 rounded-lg text-xs font-bold ${outOfStock ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 text-white'}">
+                + Add Bill
+              </button>
+
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="adjustStock('${item.id}', -1)"
+                  class="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-bold text-slate-800 leading-none">
+                  −
+                </button>
+                <span class="text-xs font-bold w-10 text-center">${stock}</span>
+                <button type="button" onclick="adjustStock('${item.id}', 1)"
+                  class="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-bold text-slate-800 leading-none">
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderCart() {
+      const container = document.getElementById('cart-items');
+      const totalEl = document.getElementById('cart-total');
+
+      if (cart.length === 0) {
+        container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">No items added yet.</p>`;
+        totalEl.textContent = formatLKR(0);
+        return;
+      }
+
+      let grandTotal = 0;
+      container.innerHTML = cart.map(entry => {
+        const item = items.find(i => i.id === entry.itemId);
+        if (!item) return '';
+        const lineTotal = Number(item.price) * entry.qty;
+        grandTotal += lineTotal;
+        return `
+          <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-slate-900 truncate">${getItemName(item)}</p>
+              <p class="text-[11px] text-slate-500">${formatLKR(item.price)} × ${entry.qty} = <strong class="text-slate-800">${formatLKR(lineTotal)}</strong></p>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button type="button" onclick="updateCartQty('${item.id}', -1)" class="w-6 h-6 rounded bg-white border border-slate-300 text-xs font-bold">−</button>
+              <span class="text-xs font-bold px-1.5">${entry.qty}</span>
+              <button type="button" onclick="updateCartQty('${item.id}', 1)" class="w-6 h-6 rounded bg-white border border-slate-300 text-xs font-bold">+</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      totalEl.textContent = formatLKR(grandTotal);
+    }
+
+    function renderBills() {
+      const tbody = document.getElementById('bills-tbody');
+      const selectAll = document.getElementById('select-all-bills');
+      if (selectAll) selectAll.checked = false;
+
+      if (bills.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-400 text-sm">No bills recorded yet today.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = bills.map(b => {
+        const summary = b.items.map(i => `${i.name} ×${i.qty}`).join(', ');
+        return `
+          <tr class="hover:bg-amber-50/40">
+            <td class="py-2.5 px-3">
+              <input type="checkbox" class="bill-checkbox" value="${b.id}" />
+            </td>
+            <td class="py-2.5 px-3 font-bold text-slate-800">${b.billNo}</td>
+            <td class="py-2.5 px-3 text-slate-500 text-xs">${b.time}</td>
+            <td class="py-2.5 px-3 text-slate-700 text-xs">${summary}</td>
+            <td class="py-2.5 px-3 text-right font-bold text-emerald-700">${formatLKR(b.total)}</td>
+            <td class="py-2.5 px-3 text-center no-print">
+              <button type="button" onclick="promptDeleteBill('${b.id}')" class="text-xs font-semibold text-rose-600 hover:underline">
+                Delete
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderArchives() {
+      const list = document.getElementById('archives-list');
+      if (archives.length === 0) {
+        list.innerHTML = `<p class="text-xs text-slate-400 col-span-full">No archived days yet. Clicking "Start New Day" saves a daily summary here.</p>`;
+        return;
+      }
+
+      list.innerHTML = archives.map(a => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-slate-800">${a.date}</span>
+            <span class="text-[11px] text-slate-500">Closed ${a.closedAt || ''}</span>
+          </div>
+          <p class="text-sm font-extrabold text-emerald-700 mt-1">${formatLKR(a.totalSales)}</p>
+          <p class="text-xs text-slate-500">${a.billCount} bill(s)</p>
+        </div>
+      `).join('');
+    }
+
+    // Initial boot
+    saveAll();
+    renderAll();
+  </script>
+</body>
+</html>
